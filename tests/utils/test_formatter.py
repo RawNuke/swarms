@@ -1,4 +1,7 @@
-from swarms.utils.formatter import Formatter
+from swarms.utils.formatter import (
+    Formatter,
+    MarkdownOutputHandler,
+)
 
 
 def test_formatter():
@@ -120,6 +123,84 @@ print(f"The answer is {result}")
     formatter.print_markdown(
         content6, title="Test 6: Direct Markdown", border_style="cyan"
     )
+
+
+def test_clean_output_strips_every_log_level():
+    """_clean_output must strip every loguru log level from the
+    output."""
+    from rich.console import Console
+
+    console = Console()
+    handler = MarkdownOutputHandler(console)
+
+    log_levels = [
+        "INFO",
+        "DEBUG",
+        "WARNING",
+        "ERROR",
+        "SUCCESS",
+        "TRACE",
+        "CRITICAL",
+    ]
+
+    for level in log_levels:
+        log_line = (
+            f"2026-01-01 12:00:00 | {level} | module:func | "
+            f"Task completed successfully"
+        )
+        cleaned = handler._clean_output(log_line)
+        assert (
+            "2026-01-01" not in cleaned
+        ), f"Timestamp not stripped for {level}: {cleaned}"
+        assert (
+            "Task completed successfully" in cleaned
+        ), f"Message lost for {level}: {cleaned}"
+
+    for level in log_levels:
+        log_line = (
+            f"{level} | module:func | extra:col | "
+            f"Task completed"
+        )
+        cleaned = handler._clean_output(log_line)
+        assert (
+            "Task completed" in cleaned
+        ), f"Message lost for {level}: {cleaned}"
+
+
+def test_clean_output_handles_empty_string():
+    """_clean_output must return an empty string for empty input."""
+    from rich.console import Console
+
+    console = Console()
+    handler = MarkdownOutputHandler(console)
+    assert handler._clean_output("") == ""
+
+
+def test_clean_output_preserves_plain_text():
+    """_clean_output must not modify text without log patterns."""
+    from rich.console import Console
+
+    console = Console()
+    handler = MarkdownOutputHandler(console)
+    text = "This is plain text without any log patterns."
+    cleaned = handler._clean_output(text)
+    assert "plain text" in cleaned
+
+
+def test_dead_print_methods_are_removed():
+    """The three dead print methods must not exist on Formatter."""
+    formatter = Formatter(md=False)
+    assert not hasattr(formatter, "print_progress")
+    assert not hasattr(formatter, "print_panel_token_by_token")
+    assert not hasattr(formatter, "print_plan_tree")
+
+
+def test_print_markdown_still_works_as_alias():
+    """print_markdown must still be callable and forward to
+    print_panel."""
+    formatter = Formatter(md=False)
+    assert hasattr(formatter, "print_markdown")
+    formatter.print_markdown("Hello", title="Alias Test")
 
 
 if __name__ == "__main__":

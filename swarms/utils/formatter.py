@@ -1,15 +1,9 @@
-import time
 import re
 from typing import Any, Callable, Dict, List, Optional
 
 from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
-from rich.progress import (
-    Progress,
-    SpinnerColumn,
-    TextColumn,
-)
 from rich.table import Table
 from rich.text import Text
 from rich.spinner import Spinner
@@ -41,24 +35,12 @@ class MarkdownOutputHandler:
         if not output:
             return ""
 
-        # Remove log prefixes and timestamps
-        output = re.sub(
-            r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \| INFO.*?\|.*?\|",
-            "",
-            output,
+        LOG_LEVELS = (
+            "INFO|DEBUG|WARNING|ERROR|SUCCESS|TRACE|CRITICAL"
         )
+
         output = re.sub(
-            r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \| DEBUG.*?\|.*?\|",
-            "",
-            output,
-        )
-        output = re.sub(
-            r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \| WARNING.*?\|.*?\|",
-            "",
-            output,
-        )
-        output = re.sub(
-            r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \| ERROR.*?\|.*?\|",
+            rf"\d{{4}}-\d{{2}}-\d{{2}} \d{{2}}:\d{{2}}:\d{{2}} \| (?:{LOG_LEVELS}).*?\|.*?\|",
             "",
             output,
         )
@@ -71,11 +53,11 @@ class MarkdownOutputHandler:
         )
         output = re.sub(rf"{spinner_chars} Loop \d+/\d+", "", output)
 
-        # Remove any remaining log messages
-        output = re.sub(r"INFO.*?\|.*?\|.*?\|", "", output)
-        output = re.sub(r"DEBUG.*?\|.*?\|.*?\|", "", output)
-        output = re.sub(r"WARNING.*?\|.*?\|.*?\|", "", output)
-        output = re.sub(r"ERROR.*?\|.*?\|.*?\|", "", output)
+        output = re.sub(
+            rf"(?:{LOG_LEVELS}).*?\|.*?\|.*?\|",
+            "",
+            output,
+        )
 
         # Clean up extra whitespace and empty lines
         output = re.sub(r"\n\s*\n\s*\n", "\n\n", output)
@@ -451,18 +433,15 @@ class Formatter:
     ) -> None:
         """Print content as markdown with syntax highlighting.
 
+        This is a documented alias for ``print_panel`` kept for
+        backward compatibility.
+
         Args:
             content (str): The content to display as markdown
             title (str): The title of the panel
             border_style (str): The border style for the panel
         """
-        if self.markdown_handler:
-            self.markdown_handler.render_markdown_output(
-                content, title, border_style
-            )
-        else:
-            # Fallback to regular panel if markdown is disabled
-            self.print_panel(content, title, border_style)
+        self.print_panel(content, title, border_style)
 
     def print_table(
         self, title: str, data: Dict[str, List[str]]
@@ -483,69 +462,6 @@ class Formatter:
 
         self.console.print(f"\n🔥 {title}:", style="bold yellow")
         self.console.print(table)
-
-    def print_progress(
-        self,
-        description: str,
-        task_fn: Callable,
-        *args: Any,
-        **kwargs: Any,
-    ) -> Any:
-        """
-        Prints a progress bar to the console and executes a task function.
-
-        Args:
-            description (str): The description of the task.
-            task_fn (Callable): The function to execute.
-            *args (Any): Arguments to pass to the task function.
-            **kwargs (Any): Keyword arguments to pass to the task function.
-
-        Returns:
-            Any: The result of the task function.
-        """
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-        ) as progress:
-            task = progress.add_task(description, total=None)
-            result = task_fn(*args, **kwargs)
-            progress.update(task, completed=True)
-        return result
-
-    def print_panel_token_by_token(
-        self,
-        tokens: str,
-        title: str = "Output",
-        style: str = "bold cyan",
-        delay: float = 0.01,
-        by_word: bool = False,
-    ) -> None:
-        """
-        Prints a string in real-time, token by token (character or word) inside a Rich panel.
-
-        Args:
-            tokens (str): The string to display in real-time.
-            title (str): Title of the panel.
-            style (str): Style for the text inside the panel.
-            delay (float): Delay in seconds between displaying each token.
-            by_word (bool): If True, display by words; otherwise, display by characters.
-        """
-        text = Text(style=style)
-
-        # Split tokens into characters or words
-        token_list = tokens.split() if by_word else tokens
-
-        with Live(
-            Panel(text, title=title, border_style=style),
-            console=self.console,
-            refresh_per_second=10,
-        ) as live:
-            for token in token_list:
-                text.append(token + (" " if by_word else ""))
-                live.update(
-                    Panel(text, title=title, border_style=style)
-                )
-                time.sleep(delay)
 
     def print_streaming_panel(
         self,
@@ -746,85 +662,6 @@ class Formatter:
             self._dashboard_live.stop()
             self.console.print()  # Add blank line after stopping
             self._dashboard_live = None
-
-    def print_plan_tree(
-        self,
-        task_description: str,
-        steps: List[Dict[str, Any]],
-        print_on: bool = True,
-    ) -> None:
-        """
-        Print the plan as a beautiful tree using Rich.
-
-        Args:
-            task_description: Description of the main task
-            steps: List of step dictionaries with step_id, description, priority, and optional dependencies
-            print_on: Whether to print to console (True) or just log (False)
-        """
-        import logging
-
-        logger = logging.getLogger(__name__)
-
-        # Create root tree
-        tree = Tree(
-            f"[bold cyan]📋 Plan: {task_description}[/bold cyan]"
-        )
-
-        # Priority color mapping
-        priority_colors = {
-            "critical": "red",
-            "high": "yellow",
-            "medium": "blue",
-            "low": "green",
-        }
-
-        priority_icons = {
-            "critical": "🔴",
-            "high": "🟠",
-            "medium": "🟡",
-            "low": "🟢",
-        }
-
-        # Create a mapping of step_id to tree nodes for dependency handling
-        step_nodes = {}
-
-        # First pass: create all nodes
-        for step in steps:
-            step_id = step.get("step_id", "")
-            description = step.get("description", "")
-            priority = step.get("priority", "medium").lower()
-            dependencies = step.get("dependencies", [])
-
-            priority_color = priority_colors.get(priority, "white")
-            priority_icon = priority_icons.get(priority, "○")
-
-            # Create step label with priority indicator
-            step_label = (
-                f"[{priority_color}]{priority_icon} {step_id}[/{priority_color}]: "
-                f"{description}"
-            )
-
-            # Add dependencies info if present
-            if dependencies:
-                deps_text = ", ".join(dependencies)
-                step_label += f" [dim](depends on: {deps_text})[/dim]"
-
-            # Add node to tree
-            step_node = tree.add(step_label)
-            step_nodes[step_id] = step_node
-
-        # Print the tree
-        if print_on:
-            self.console.print("\n")
-            self.console.print(tree)
-            self.console.print("")
-        else:
-            # Even if print_on is False, log the tree structure
-            logger.info(f"Plan created: {task_description}")
-            for step in steps:
-                logger.info(
-                    f"  - {step.get('step_id')} ({step.get('priority')}): {step.get('description')}"
-                )
 
     def display_hierarchy(
         self,
